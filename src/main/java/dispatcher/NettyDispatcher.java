@@ -1,6 +1,6 @@
-package server;
+package dispatcher;
 
-import handler.NettyDiscardServerHandler;
+import handler.NettyDiscardHandler;
 import io.netty.bootstrap.ServerBootstrap;
 
 import io.netty.channel.ChannelFuture;
@@ -14,36 +14,36 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 /**
  * Discards any incoming data.
  */
-public class NettyDiscardServer {
+public class NettyDispatcher {
     private final int port;
 
-    public NettyDiscardServer(int port) {
+    public NettyDispatcher(int port) {
         this.port = port;
     }
 
     public void run() throws Exception {
-        EventLoopGroup bossGroup = new NioEventLoopGroup(); // (1)
-        EventLoopGroup workerGroup = new NioEventLoopGroup();
+        EventLoopGroup bossGroup = new NioEventLoopGroup(); // Main Reactor
+        EventLoopGroup workerGroup = new NioEventLoopGroup(); // Sub Reactor and Worker Thread
         try {
-            ServerBootstrap b = new ServerBootstrap(); // (2)
-            b.group(bossGroup, workerGroup)
-                    .channel(NioServerSocketChannel.class) // (3)
-                    .childHandler(new ChannelInitializer<SocketChannel>() { // (4)
+            ServerBootstrap bootstrap = new ServerBootstrap();
+            bootstrap.group(bossGroup, workerGroup)
+                    .channel(NioServerSocketChannel.class) // NIO Model
+                    .option(ChannelOption.SO_BACKLOG, 128) //
+                    .childOption(ChannelOption.SO_KEEPALIVE, true) //
+                    .childHandler(new ChannelInitializer<SocketChannel>() { //
                         @Override
-                        public void initChannel(SocketChannel ch) throws Exception {
-                            ch.pipeline().addLast(new NettyDiscardServerHandler());
+                        public void initChannel(SocketChannel channel) {
+                            channel.pipeline().addLast(new NettyDiscardHandler());
                         }
-                    })
-                    .option(ChannelOption.SO_BACKLOG, 128)          // (5)
-                    .childOption(ChannelOption.SO_KEEPALIVE, true); // (6)
+                    });
 
             // Bind and start to accept incoming connections.
-            ChannelFuture f = b.bind(port).sync(); // (7)
+            ChannelFuture future = bootstrap.bind(port).sync(); // default is async
 
             // Wait until the server socket is closed.
             // In this example, this does not happen, but you can do that to gracefully
             // shut down your server.
-            f.channel().closeFuture().sync();
+            future.channel().closeFuture().sync();
         } finally {
             workerGroup.shutdownGracefully();
             bossGroup.shutdownGracefully();
@@ -55,6 +55,6 @@ public class NettyDiscardServer {
         if (args.length > 0) {
             port = Integer.parseInt(args[0]);
         }
-        new NettyDiscardServer(port).run();
+        new NettyDispatcher(port).run();
     }
 }
